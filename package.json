@@ -1,0 +1,31 @@
+{
+  "name": "mongoose-enumvalues",
+  "version": "0.0.1",
+  "description": "Mongoose plugin that provides convenient access to enum values",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha -R spec test"
+  },
+  "keywords": [
+    "mongoose",
+    "enum",
+    "plugin",
+    "values"
+  ],
+  "author": "Jason Franz",
+  "license": "MIT",
+  "devDependencies": {
+    "chai": "^3.5.0",
+    "eslint": "^3.16.1",
+    "mocha": "^3.2.0",
+    "mockgoose": "^7.0.5",
+    "mongoose": "^4.8.5"
+  },
+    "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jfrazx/mongoose-enumvalues"
+  },
+  "engines" : {
+    "node" : ">=6.0"
+  }
+}
