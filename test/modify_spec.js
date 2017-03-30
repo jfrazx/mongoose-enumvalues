@@ -72,12 +72,15 @@ describe('EnumValues', function() {
           const oldRole = role.role.value;
           const newRole = randElement(role.role.values, oldRole);
 
-          return Role.findByIdAndUpdate(role._id, { $set: { role: newRole } }, { new: true })
-            .then(function(updatedRole) {
-              expect(updatedRole.role).to.not.equal(oldRole);
-              expect(updatedRole.role).to.equal(newRole);
-              done();
-            });
+          return Role.findByIdAndUpdate(role._id,
+              { $set: { role: newRole } },
+              { new: true })
+                .then(function(updatedRole) {
+                  expect(updatedRole.role).to.not.equal(oldRole);
+                  expect(updatedRole.role).to.equal(newRole);
+                  done();
+                }
+              );
         })
         .catch(done);
     });
@@ -87,13 +90,34 @@ describe('EnumValues', function() {
         .then(function(role) {
           const nested = randElement(role.nesting.something.values);
 
-          expect(role.nesting.something.value).that.be.null;
+          expect(role.nesting.something.value).to.be.null;
 
           role.nesting.something.value = nested;
           return Role.findOneAndUpdate({ _id: role._id }, { $set: role }, { new: true })
             .then(function(updatedRole) {
               expect(updatedRole.nesting.something).to.not.be.null;
               expect(updatedRole.nesting.something).to.equal(nested);
+              done();
+            });
+        })
+        .catch(done);
+    });
+
+    it('should find by id and modify', function(done) {
+      Role.find({})
+        .then(function(roles) {
+          const id = randElement(roles);
+
+          return Role.findById(id).lean()
+            .then(function(role) {
+              expect(role.role).to.be.an('object');
+              expect(role.role.values).to.be.an.instanceof(Array);
+              expect(role.role.value).to.be.a('string');
+              expect(role.role.values).to.have.length(3);
+
+              role.role.values.forEach(function(value) {
+                expect(value).to.be.a('string');
+              });
               done();
             });
         })

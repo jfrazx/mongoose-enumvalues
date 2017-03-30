@@ -1,6 +1,6 @@
 {
   "name": "mongoose-enumvalues",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Mongoose plugin that provides convenient access to enum values",
   "main": "index.js",
   "scripts": {
@@ -25,6 +25,7 @@
     "type": "git",
     "url": "git+https://github.com/jfrazx/mongoose-enumvalues"
   },
+  "types": "index.d.ts",
   "engines" : {
     "node" : ">=6.0"
   }

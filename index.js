@@ -75,19 +75,21 @@ function modifyProperties(schema, paths) {
   *
   */
   function populatePropertyFor (documents, next) {
-    asArray(documents).forEach(function(doc) {
-      paths.forEach(function(path) {
-        try {
-          const splitted = path.path.split('.');
-          const key      = splitted.shift();
-          const insert   = { values: path.enumValues };
-          const value    = doc[key];
+    if (this._mongooseOptions.lean) {
+      asArray(documents).forEach(function(doc) {
+        paths.forEach(function(path) {
+          try {
+            const splitted = path.path.split('.');
+            const key      = splitted.shift();
+            const insert   = { values: path.enumValues };
+            const value    = doc[key];
 
-          insert.value = determineValue(splitted, value);
-          doc[key]     = nest(splitted, insert);
-        } catch (error) { return next(error); }
+            insert.value = determineValue(splitted, value);
+            doc[key]     = nest(splitted, insert);
+          } catch (error) { return next(error); }
+        });
       });
-    });
+    }
 
     next();
   }
@@ -108,7 +110,7 @@ function modifyProperties(schema, paths) {
 
           if (document[key] === undefined) { return; }
 
-          const value    = determineValue(splitted, document[key]);
+          const value   = determineValue(splitted, document[key]);
 
           document[key] = nest(splitted, value);
         } catch (error) { return next(error); }

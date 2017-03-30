@@ -1,20 +1,20 @@
 
-# EnumValues 
+# EnumValues
 
-Mongoose plugin that allows easy access to enum values. You can create virtals, attach to your document, or modify your enum property in-place.
+Mongoose plugin that allows easy access to enum values. You can create virtuals, attach to your document, or modify your enum property in-place. Now with a TypeScript definition.
 
 
-## Installation 
+## Installation
 
-```bash 
+```bash
 npm install [--save] mongoose-enumvalues
 ```
 
-## Examples 
-### Setup 
+## Examples
+### Setup
 
-```javascript 
-const mongoose   = require('mongoose'); 
+```javascript
+const mongoose   = require('mongoose');
 const enumValues = require('mongoose-enumvalues');
 const { Schema } = mongoose;
 const UserSchema = new Schema({
@@ -46,29 +46,14 @@ UserSchema.plugin(enumValues, enumOptions);
 
 module.exports = mongoose.model('User', UserSchema);
 ```
-### Model
-```javascript 
-const User = require('mongoose').model('User');
 
-User.create({
-  name: 'Bart Simpson',
-  age: 10,
-  gender: 'male'
-})
-.then(function(user) {
-  //....
-})
-.catch(handleErrors);
-```
-
-
-## Virtuals 
+## Virtuals
   Automatically create virtual properties for enum value access.
 
-```javascript 
+```javascript
 const enumOptions = {
   virtual: {
-    only: ['gender', 'role'], 
+    only: ['gender', 'role'],
     properties: {
       gender: 'genders',
       role: 'roleValues'
@@ -77,7 +62,7 @@ const enumOptions = {
 };
 
 //...
-user.genders 
+user.genders
 => ['MALE', 'FEMALE']
 
 user.roleValues
@@ -89,9 +74,9 @@ user.roleValues
   Simply attach enum values to your documents, restricting which paths are included,    
   and which methods hooked: ['find', 'findOne']
 
-```javascript 
+```javascript
 const enumOptions = {
-  find: true, 
+  find: true,
   findOne: true,
   attach: {
   //only: ['gender', 'role'], if omitted, determines properties via keys
@@ -115,18 +100,18 @@ user.roles
 => ['admin', 'moderator', 'guest']
 ```
 
-## Modify 
+## Modify
   This option directly modifies the enum property to be an object, including the original value and the array of enum options.    
   In order for this to work correctly, `lean()` must be called.
 
-```javascript 
+```javascript
 const enumOptions = {
-  find: true, 
+  find: true,
   findOne: true
   modify: true
 };
 
-user.gender 
+user.gender
 => {
   values: ['MALE', 'FEMALE'],
   value: 'MALE'
@@ -146,15 +131,15 @@ user.nesting
   }
 }
 
-// You may set modified values as such 
+// You may set modified values as such
 user.nesting.enums = 'wicked';
 
-// or 
+// or
 user.nesting.enums.value = 'wicked';
 
 
 
-// Alternatively you may restrict the paths and the methods 
+// Alternatively you may restrict the paths and the methods
 
 const enumOptions = {
   modify: {
@@ -164,8 +149,7 @@ const enumOptions = {
 }
 ```
 
-## Caveats 
+## Caveats
   `Model.update` bypasses any validations and middleware. Utilizing this method with `modify` will produce undesired results.    
   Due to the nature of Mongoose objects, `modify` must be used in conjunction with `lean()`.    
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Example: `User.findOne({ username }).lean().then()...`
-
