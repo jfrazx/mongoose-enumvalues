@@ -19,7 +19,7 @@
     "eslint": "^3.16.1",
     "mocha": "^3.2.0",
     "mockgoose": "^7.0.5",
-    "mongoose": "^4.8.5"
+    "mongoose": "^8.0.0"
   },
     "repository": {
     "type": "git",
