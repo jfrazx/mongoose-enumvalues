@@ -17,10 +17,10 @@
   "author": "Jason Franz",
   "license": "MIT",
   "devDependencies": {
-    "@vitest/coverage-v8": "4.1.11",
+    "@vitest/coverage-v8": "5.0.0",
     "mongodb-memory-server": "^11.2.0",
     "mongoose": "^8.24.4",
-    "vitest": "4.1.11"
+    "vitest": "5.0.0"
   },
   "repository": {
     "type": "git",
