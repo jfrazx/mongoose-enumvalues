@@ -65,7 +65,7 @@ jobs:
       # restore-keys lets an unrelated edit to that file reuse the existing
       # binary instead of re-downloading it.
       - name: Cache MongoDB binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache/mongodb-binaries
           key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('test/globalSetup.js') }}
@@ -109,7 +109,7 @@ jobs:
       - run: npm ci
 
       - name: Cache MongoDB binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache/mongodb-binaries
           key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('test/globalSetup.js') }}
