@@ -18,11 +18,18 @@ This is the reference #14 and #15 are measured against:
 > and unchanged again after Prettier reformatted the tree. Coverage also holds
 > at **94.87% statements** on `index.js`.
 >
-> The one red is now marked **`it.fails()`** (D11), so `npm test` exits `0`
-> while the test still executes and still asserts. Verified both directions:
-> making the assertion pass turns the suite red with exit `1`, which is the
-> signal #15 should expect when it fixes the behaviour. The marker sits at
-> `test/modify_spec.js` and is removed as part of that fix.
+> The one red is now **pinned**: `test/modify_spec.js` catches the expected
+> `AssertionError` and asserts on its exact message, so `npm test` reports
+> **13 passed** and exits `0` while the behaviour stays broken and measured.
+>
+> This deviates from **D11**, which locked `it.fails()`. That marker passes on
+> _any_ thrown error — an injected `TypeError` still reported "1 expected fail"
+> and exited `0`, and the four assertions after the failing one never ran at
+> all. Pinning the specific error keeps both properties D11 wanted. Verified
+> both directions: an unrelated regression inside that test now fails the
+> suite, and making the assertion pass also fails it, with
+> `baseline red is fixed -- see #15`. That is the signal #15 should expect when
+> it fixes the behaviour. The pin is removed as part of that fix.
 
 ## Per-test
 
@@ -44,6 +51,10 @@ This is the reference #14 and #15 are measured against:
 
 The failure is independent, not a cascade: it is the first assertion in its
 test, and the tests before it all pass.
+
+Row 12 still reads **FAIL** because that is what Phase 0 measured. Since #13 the
+failure is pinned rather than left loose, so `npm test` reports 13 passed. The
+behaviour is unchanged — only how it is recorded.
 
 ## The one failure, in detail
 

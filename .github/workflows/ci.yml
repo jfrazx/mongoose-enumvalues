@@ -1,6 +1,15 @@
 name: CI
 
 on:
+  # Deliberately master-only. A push to a branch with an open PR is already
+  # covered by the pull_request event, and running both would double every
+  # job: the concurrency group below cannot dedupe them, because a push
+  # resolves `github.ref` while a pull_request resolves `github.head_ref`, so
+  # the two events never share a group key.
+  #
+  # Accepted gap: a branch pushed with no PR open gets no CI until one is
+  # opened. The gate this phase exists to enforce is on merges to master, and
+  # every merge goes through a PR.
   push:
     branches: [master]
   pull_request:
