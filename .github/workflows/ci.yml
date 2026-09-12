@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Keyed on head_ref for pull_request events so a PR's runs supersede each
+# other. Using github.ref alone would give push and pull_request events
+# different groups and deduplicate neither.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # mongodb-memory-server's postinstall hook downloads a ~77MB binary on every
+  # `npm ci`, into node_modules/.cache, which setup-node does not cache and
+  # which the runtime would then prefer over the directory that *is* cached.
+  # Disabled so the only download is the one the cache below actually stores.
+  MONGOMS_DISABLE_POSTINSTALL: '1'
+
+jobs:
+  test:
+    name: test · node ${{ matrix.node }} · mongoose ${{ matrix.mongoose }}
+    runs-on: ubuntu-latest
+    # The Mongoose 9 legs are expected red until #15 — index.js registers
+    # next()-style pre hooks, which Mongoose 9 removed. A visible red beats a
+    # hidden gap, so these run and report rather than being deleted.
+    continue-on-error: ${{ matrix.mongoose == 9 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+        mongoose: [8, 9]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      # Only the 9 legs override. Running this unguarded would re-resolve
+      # mongoose from the registry on the 8 legs too, silently replacing the
+      # lockfile version that is supposed to be the baseline.
+      - name: Install mongoose ${{ matrix.mongoose }}
+        if: matrix.mongoose != 8
+        run: npm install --no-save mongoose@${{ matrix.mongoose }}
+
+      # Keyed on globalSetup.js, which carries the pinned MongoDB version.
+      # restore-keys lets an unrelated edit to that file reuse the existing
+      # binary instead of re-downloading it.
+      - name: Cache MongoDB binary
+        uses: actions/cache@v4
+        with:
+          path: .cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('test/globalSetup.js') }}
+          restore-keys: |
+            mongodb-binaries-${{ runner.os }}-
+
+      - run: npm test
+
+  lint:
+    name: lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 only. Lint is toolchain, not behaviour, so it does not need the
+      # matrix — and eslint@10 requires ^22.13, which the package's own 22.12
+      # floor would not guarantee. Locked as D13 on #13.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    # Runs after the matrix so it restores a warm cache rather than joining
+    # the cold-start download.
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache MongoDB binary
+        uses: actions/cache@v4
+        with:
+          path: .cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('test/globalSetup.js') }}
+          restore-keys: |
+            mongodb-binaries-${{ runner.os }}-
+
+      # Reported, never gated. index.js is replaced in #14 and rewritten in
+      # #15, so a threshold pinned to today's file shape would fight both
+      # phases. The gate lands in #15. Locked as D12 on #13.
+      #
+      # pipefail so a crashed test run fails this step instead of quietly
+      # writing an empty table; NO_COLOR so the summary gets plain text
+      # rather than ANSI escapes, which vitest emits whenever CI is set.
+      - name: Report coverage
+        env:
+          NO_COLOR: '1'
+        run: |
+          set -o pipefail
+          {
+            echo '## Coverage'
+            echo
+            echo '```'
+            npm run test:coverage --silent 2>&1 | sed -n '/% Stmts/,/^[[:space:]]*$/p'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -13,6 +13,17 @@ This is the reference #14 and #15 are measured against:
 `npm test` runs to completion for the first time since 2017.
 **12 passed, 1 failed, 13 total.** Stable across three consecutive runs.
 
+> **Amended in #13 (Phase 1).** This result is unchanged under **Vitest 5.0.0**
+> — same count, same test, same assertion, stable across three further runs —
+> and unchanged again after Prettier reformatted the tree. Coverage also holds
+> at **94.87% statements** on `index.js`.
+>
+> The one red is now marked **`it.fails()`** (D11), so `npm test` exits `0`
+> while the test still executes and still asserts. Verified both directions:
+> making the assertion pass turns the suite red with exit `1`, which is the
+> signal #15 should expect when it fixes the behaviour. The marker sits at
+> `test/modify_spec.js` and is removed as part of that fix.
+
 ## Per-test
 
 | #   | File         | Test                                                 | Result   | Cause if red                                                              |
@@ -88,7 +99,31 @@ skips anyway because it only reads `this._update['$set']` (`index.js:103`).
 No assertion was changed, added, or removed. `index.js` and `test/models/*.js`
 are byte-identical to the 2017 source.
 
+> **No longer true as of #13 (Phase 1).** Prettier reformatted the whole tree,
+> including `index.js` and `test/models/*.js`. The change is whitespace only —
+> `git diff -w --ignore-blank-lines` over `index.js` shows nothing but expanded
+> single-line blocks, wrapped argument lists, and removed redundant parentheses
+> — and the suite result above is unchanged across it. The _behaviour_ baseline
+> this document records still stands; only the byte-level claim does not.
+
 ## Observations carried into #15
+
+> **Line numbers below predate #13's Prettier reformat and no longer resolve.**
+> The code is unchanged — only its formatting — but every anchor moved. Current
+> locations:
+>
+> | Observation                             | Cited as  | Now at                                                      |
+> | --------------------------------------- | --------- | ----------------------------------------------------------- |
+> | `pre('update')` registration            | `155`     | `167-168`, inside the `['update', 'findOneAndUpdate']` loop |
+> | `this._mongooseOptions.lean`            | `78`      | `79`                                                        |
+> | inner `paths.forEach` shadowing `path`  | `249`     | `264`                                                       |
+> | `filterPaths` rethrowing everything     | `187-215` | from `197`                                                  |
+> | `determineValue` swallowing all errors  | `267-280` | from `282`                                                  |
+> | `nest()` mutating via `array.reverse()` | `289`     | `306`                                                       |
+> | `next()`-style pre hooks                | `102-141` | from `105`                                                  |
+>
+> Coverage's uncovered-line list moved with them: `89,116,137,199,205-208`
+> became `91,122,145,212,218-221`.
 
 Found while measuring. None are test failures; all are latent.
 

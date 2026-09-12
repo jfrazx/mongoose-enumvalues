@@ -71,7 +71,24 @@ describe('EnumValues', function () {
 
       const nested = randElement(role.nesting.something.values);
 
-      expect(role.nesting.something.value).to.be.null;
+      // The baseline red, pinned rather than skipped -- see docs/baseline.md.
+      // Mongoose 8 omits unset nested paths from lean() results, so
+      // determineValue receives undefined where Mongoose 4 gave it null.
+      //
+      // Asserting the exact failure, instead of marking the whole test
+      // it.fails(), keeps two properties D11 wanted: the rest of this test
+      // still runs and asserts, and an unrelated regression anywhere in it
+      // still fails the suite. When #15 fixes the behaviour this assertion
+      // goes red, which is the signal to delete this block and restore the
+      // original `expect(role.nesting.something.value).to.be.null;`.
+      let caught;
+      try {
+        expect(role.nesting.something.value).to.be.null;
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught, 'baseline red is fixed -- see #15').to.exist;
+      expect(caught.message).to.equal('expected undefined to be null');
 
       role.nesting.something.value = nested;
 
