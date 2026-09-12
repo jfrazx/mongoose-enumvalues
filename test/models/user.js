@@ -14,8 +14,8 @@ const UserSchema = new Schema({
     type: String,
     enum: ['MALE', 'FEMALE'],
     uppercase: true,
-    default: 'FEMALE'
-  }
+    default: 'FEMALE',
+  },
 });
 
 /**
@@ -36,10 +36,10 @@ const enumOptions = {
   attach: {
     properties: {
       gender: {
-        as: 'genders'
-      }
-    }
-  }
+        as: 'genders',
+      },
+    },
+  },
 };
 
 UserSchema.plugin(enumValues, enumOptions);

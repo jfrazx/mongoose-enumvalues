@@ -8,20 +8,20 @@ const RoleSchema = new Schema({
     lowercase: true,
     required: true,
     enum: ['admin', 'moderator', 'guest'],
-    default: 'guest'
+    default: 'guest',
   },
   priority: {
     type: Number,
-    default: 2
+    default: 2,
   },
   nesting: {
     something: {
       type: String,
       lowercase: true,
       trim: true,
-      enum: ['wicked', 'this', 'way', 'comes']
-    }
-  }
+      enum: ['wicked', 'this', 'way', 'comes'],
+    },
+  },
 });
 
 /**
@@ -38,13 +38,12 @@ const enumOptions = {
   attach: {
     properties: {
       'nesting.something': {
-        as: 'nester'
-      }
-    }
-  }
+        as: 'nester',
+      },
+    },
+  },
 };
 
 RoleSchema.plugin(enumValues, enumOptions);
 
 module.exports = mongoose.model('Role', RoleSchema);
-
