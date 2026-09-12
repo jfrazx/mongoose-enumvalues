@@ -6,19 +6,19 @@ const PetSchema = new Schema({
   species: {
     type: String,
     uppercase: true,
-    enum: ['LION', 'TIGER', 'BEAR', 'PYTHON', 'PENGUIN']
+    enum: ['LION', 'TIGER', 'BEAR', 'PYTHON', 'PENGUIN'],
   },
   name: String,
   numLegs: {
     type: String,
     uppercase: true,
     enum: ['ZERO', 'ONE', 'TWO', 'FOUR', 'MANY'],
-    default: 'FOUR'
+    default: 'FOUR',
   },
   eatsPeople: {
     type: Boolean,
-    default: true
-  }
+    default: true,
+  },
 });
 
 /**
@@ -35,9 +35,9 @@ const enumOptions = {
     only: ['species'],
     properties: {
       species: 'speciesOptions',
-      numLegs: 'numberOfLegs'
-    }
-  }
+      numLegs: 'numberOfLegs',
+    },
+  },
 };
 
 PetSchema.plugin(enumValues, enumOptions);
