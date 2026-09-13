@@ -33,7 +33,7 @@
     "mongodb-memory-server": "^11.2.0",
     "mongoose": "^8.24.4",
     "prettier": "3.9.6",
-    "typescript": "6.0.3",
+    "typescript": "7.0.2",
     "typescript-eslint": "8.70.0",
     "vitest": "5.0.0"
   },
