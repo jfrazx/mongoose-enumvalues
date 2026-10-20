@@ -35,7 +35,7 @@ jobs:
   test:
     name: test · node ${{ matrix.node }} · mongoose ${{ matrix.mongoose }}
     runs-on: ubuntu-latest
-    # The Mongoose 9 legs are expected red until #15 — index.js registers
+    # The Mongoose 9 legs are expected red until #15 — src/index.ts registers
     # next()-style pre hooks, which Mongoose 9 removed. A visible red beats a
     # hidden gap, so these run and report rather than being deleted.
     continue-on-error: ${{ matrix.mongoose == 9 }}
@@ -61,21 +61,21 @@ jobs:
         if: matrix.mongoose != 8
         run: npm install --no-save mongoose@${{ matrix.mongoose }}
 
-      # Keyed on globalSetup.js, which carries the pinned MongoDB version.
+      # Keyed on globalSetup.mts, which carries the pinned MongoDB version.
       # restore-keys lets an unrelated edit to that file reuse the existing
       # binary instead of re-downloading it.
       - name: Cache MongoDB binary
         uses: actions/cache@v4
         with:
           path: .cache/mongodb-binaries
-          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('test/globalSetup.js') }}
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('test/globalSetup.mts') }}
           restore-keys: |
             mongodb-binaries-${{ runner.os }}-
 
       - run: npm test
 
   lint:
-    name: lint and format
+    name: lint, typecheck and format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -90,7 +90,73 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm run format:check
+
+  # Packs exactly what `npm publish` would: prepack runs the build, and the
+  # build runs publint and attw against the packed tarball, failing on
+  # either. Node 24 only, for the same reason as lint -- tsdown requires
+  # ^22.18, above the package's own floor. D19, D22 and D23 on #14.
+  package:
+    name: build and package checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm pack
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: mongoose-enumvalues-*.tgz
+          if-no-files-found: error
+
+  # Installs that same tarball into the consumer fixtures and checks it from
+  # the outside: typechecked as an ESM and a CommonJS consumer would see it,
+  # then loaded through Node's own import and require. Built once on 24, and
+  # exercised here on the same Node lines as the test matrix. D17 on #14.
+  #
+  # Against both halves of the peer range, since the published declarations
+  # import mongoose's types. Unlike the test matrix, the 9 legs gate: these
+  # checks register no hooks, so nothing in them waits on #15.
+  consumers:
+    name: consumers · node ${{ matrix.node }} · mongoose ${{ matrix.mongoose }}
+    runs-on: ubuntu-latest
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+        mongoose: [8, 9]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # For mongoose, typescript and @types/node, which the fixtures resolve
+      # from the repository root.
+      - run: npm ci
+
+      # Guarded for the same reason as in the test matrix.
+      - name: Install mongoose ${{ matrix.mongoose }}
+        if: matrix.mongoose != 8
+        run: npm install --no-save mongoose@${{ matrix.mongoose }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: artifact
+
+      - run: npm run test:package -- artifact/*.tgz
 
   coverage:
     name: coverage
@@ -112,13 +178,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/mongodb-binaries
-          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('test/globalSetup.js') }}
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('test/globalSetup.mts') }}
           restore-keys: |
             mongodb-binaries-${{ runner.os }}-
 
-      # Reported, never gated. index.js is replaced in #14 and rewritten in
-      # #15, so a threshold pinned to today's file shape would fight both
-      # phases. The gate lands in #15. Locked as D12 on #13.
+      # Reported, never gated. src/index.ts is rewritten in #15, so a
+      # threshold pinned to today's file shape would fight that phase. The
+      # gate lands in #15. Locked as D12 on #13.
       #
       # pipefail so a crashed test run fails this step instead of quietly
       # writing an empty table; NO_COLOR so the summary gets plain text
