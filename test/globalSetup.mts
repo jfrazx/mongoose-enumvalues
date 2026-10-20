@@ -1,5 +1,12 @@
 import { resolve } from 'node:path';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import type { TestProject } from 'vitest/node';
+
+declare module 'vitest' {
+  export interface ProvidedContext {
+    MONGO_URI: string;
+  }
+}
 
 // Pinned deliberately rather than left to the package default, so a
 // mongodb-memory-server release cannot change the server under the suite
@@ -14,9 +21,9 @@ const DOWNLOAD_DIR = resolve(
   'mongodb-binaries',
 );
 
-let mongod;
+let mongod: MongoMemoryServer;
 
-export default async function setup({ provide }) {
+export default async function setup({ provide }: TestProject) {
   mongod = await MongoMemoryServer.create({
     binary: {
       version: MONGODB_VERSION,

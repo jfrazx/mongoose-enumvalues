@@ -1,0 +1,12 @@
+// Shared by both consumers, so the only thing that differs between them is
+// the "type" in each one's package.json -- which is the variable under test.
+{
+  "compilerOptions": {
+    "module": "node16",
+    "target": "es2022",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": false,
+    "types": ["node"]
+  }
+}

@@ -1,6 +1,5 @@
-const path = require('path');
-const enumValues = require(path.resolve('index'));
-const mongoose = require('mongoose');
+import enumValues from '../../src/index';
+import mongoose from 'mongoose';
 const { Schema } = mongoose;
 const PetSchema = new Schema({
   species: {
@@ -30,7 +29,7 @@ const PetSchema = new Schema({
     }
  */
 
-const enumOptions = {
+const enumOptions: enumValues.EnumValueOptions = {
   virtual: {
     only: ['species'],
     properties: {
@@ -42,4 +41,4 @@ const enumOptions = {
 
 PetSchema.plugin(enumValues, enumOptions);
 
-module.exports = mongoose.model('Pet', PetSchema);
+export default mongoose.model('Pet', PetSchema);
