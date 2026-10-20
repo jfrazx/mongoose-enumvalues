@@ -7,11 +7,11 @@ import tseslint from 'typescript-eslint';
 
 export default defineConfig(
   {
-    ignores: ['coverage/', 'docs/', '.cache/'],
+    ignores: ['coverage/', 'dist/', 'docs/', '.cache/'],
   },
 
   {
-    files: ['**/*.{js,mjs,ts}'],
+    files: ['**/*.{js,mjs,cjs,ts,mts,cts}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     rules: {
       // Carried forward from the deleted .eslintrc. #13 retires that file's
@@ -27,27 +27,17 @@ export default defineConfig(
     },
   },
 
-  // The package has no "type": "module", so .js is CommonJS. Everything below
-  // narrows that default where a file genuinely differs.
+  // The source and tests are TypeScript since #14. What JavaScript is left
+  // is tooling and the consumer smoke tests, all run by Node directly.
   {
-    files: ['**/*.js'],
+    files: ['**/*.cjs'],
     languageOptions: {
       sourceType: 'commonjs',
       globals: globals.node,
     },
     rules: {
-      // This package is CommonJS until #14 moves the source to TypeScript.
-      // require() is the correct call here, not a violation.
+      // require() is the correct call in a CommonJS file, not a violation.
       '@typescript-eslint/no-require-imports': 'off',
-    },
-  },
-
-  // Vitest resolves these two through its own ESM pipeline, so they use
-  // import/export despite the .js extension.
-  {
-    files: ['test/setup.js', 'test/globalSetup.js'],
-    languageOptions: {
-      sourceType: 'module',
     },
   },
 
@@ -59,27 +49,8 @@ export default defineConfig(
     },
   },
 
-  // vitest.config.mjs sets globals: true, so the specs use the bare names.
   {
-    files: ['test/**/*_spec.js'],
-    languageOptions: {
-      globals: {
-        describe: 'readonly',
-        it: 'readonly',
-        expect: 'readonly',
-        beforeAll: 'readonly',
-        afterAll: 'readonly',
-        beforeEach: 'readonly',
-        afterEach: 'readonly',
-        test: 'readonly',
-        suite: 'readonly',
-        vi: 'readonly',
-        assert: 'readonly',
-        expectTypeOf: 'readonly',
-        onTestFailed: 'readonly',
-        onTestFinished: 'readonly',
-      },
-    },
+    files: ['test/**/*_spec.ts'],
     rules: {
       // Chai's BDD assertions are bare expressions by design:
       //   expect(role.nesting.something.value).to.be.null;
@@ -87,19 +58,20 @@ export default defineConfig(
     },
   },
 
-  // index.js is the untouched 2017 source. #15 rewrites it, and these four
-  // findings are that phase's work -- three are already recorded as latent
-  // bugs in docs/baseline.md:
+  // src/index.ts is the 2017 source, ported to TypeScript in #14 with its
+  // behaviour unchanged. #15 rewrites it, and these four findings are that
+  // phase's work -- three are already recorded as latent bugs in
+  // docs/baseline.md:
   //
-  //   no-unused-vars (207)     -> filterPaths swallowing the caught error
+  //   no-unused-vars (311)     -> filterPaths swallowing the caught error
   //   preserve-caught-error    -> filterPaths rethrowing without a cause
-  //   no-unused-vars (279)     -> determineValue catching everything
-  //   no-this-alias (129)      -> not previously recorded; raised on #15
+  //   no-unused-vars (390)     -> determineValue catching everything
+  //   no-this-alias (216)      -> not previously recorded; raised on #15
   //
   // Silencing them here keeps the gate strict for every other file rather
   // than weakening it repo-wide. Delete this block in #15.
   {
-    files: ['index.js'],
+    files: ['src/index.ts'],
     rules: {
       '@typescript-eslint/no-this-alias': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
