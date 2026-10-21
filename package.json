@@ -2,17 +2,36 @@
   "name": "mongoose-enumvalues",
   "version": "0.0.3",
   "description": "Mongoose plugin that provides convenient access to enum values",
-  "main": "index.js",
+  "type": "commonjs",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.cts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
-    "index.js",
-    "index.d.ts",
+    "dist",
     "README.md",
     "LICENSE"
   ],
+  "sideEffects": false,
   "scripts": {
+    "build": "tsdown",
+    "prepack": "npm run build",
+    "typecheck": "tsc",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
+    "test:package": "node scripts/test-package.mjs",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
@@ -25,23 +44,29 @@
   ],
   "author": "Jason Franz",
   "license": "MIT",
+  "peerDependencies": {
+    "mongoose": "^8 || ^9"
+  },
   "devDependencies": {
+    "@arethetypeswrong/core": "0.18.5",
     "@eslint/js": "10.0.1",
+    "@types/node": "22.20.5",
     "@vitest/coverage-v8": "5.0.0",
     "eslint": "10.10.0",
     "globals": "17.12.0",
     "mongodb-memory-server": "^11.2.0",
     "mongoose": "^8.24.4",
     "prettier": "3.9.6",
+    "publint": "0.3.25",
+    "tsdown": "0.23.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.0",
     "vitest": "5.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jfrazx/mongoose-enumvalues"
+    "url": "git+https://github.com/jfrazx/mongoose-enumvalues.git"
   },
-  "types": "index.d.ts",
   "engines": {
     "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
   }

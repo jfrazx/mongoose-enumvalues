@@ -1,4 +1,21 @@
-const Role = require('mongoose').model('Role');
+import mongoose from 'mongoose';
+import { beforeAll, describe, expect, it } from 'vitest';
+
+const Role = mongoose.model('Role');
+
+// `modify` rewrites each enum path on a lean result into this shape, which
+// Mongoose's own types cannot know about.
+interface Modified {
+  value?: string;
+  values: string[];
+}
+
+interface LeanRole {
+  _id: unknown;
+  role: Modified;
+  priority: number;
+  nesting: { something: Modified };
+}
 
 describe('EnumValues', function () {
   describe('modify', function () {
@@ -15,7 +32,9 @@ describe('EnumValues', function () {
     });
 
     it('should modify property when `lean()` is used', async function () {
-      const role = await Role.findOne({ role: 'moderator' }).lean();
+      const role = (await Role.findOne({
+        role: 'moderator',
+      }).lean<LeanRole>())!;
 
       expect(role.role).to.be.an('object');
       expect(role.role.value).to.be.an('string');
@@ -23,7 +42,9 @@ describe('EnumValues', function () {
     });
 
     it('should reset value on update', async function () {
-      const role = await Role.findOne({ role: 'moderator' }).lean();
+      const role = (await Role.findOne({
+        role: 'moderator',
+      }).lean<LeanRole>())!;
 
       role.priority = 3;
 
@@ -51,7 +72,9 @@ describe('EnumValues', function () {
     });
 
     it('should update enum', async function () {
-      const role = await Role.findOne({ role: 'moderator' }).lean();
+      const role = (await Role.findOne({
+        role: 'moderator',
+      }).lean<LeanRole>())!;
 
       const oldRole = role.role.value;
       const newRole = randElement(role.role.values, oldRole);
@@ -67,7 +90,7 @@ describe('EnumValues', function () {
     });
 
     it('should process nested enums', async function () {
-      const role = await Role.findOne({}).lean();
+      const role = (await Role.findOne({}).lean<LeanRole>())!;
 
       const nested = randElement(role.nesting.something.values);
 
@@ -81,14 +104,14 @@ describe('EnumValues', function () {
       // still fails the suite. When #15 fixes the behaviour this assertion
       // goes red, which is the signal to delete this block and restore the
       // original `expect(role.nesting.something.value).to.be.null;`.
-      let caught;
+      let caught: Error | undefined;
       try {
         expect(role.nesting.something.value).to.be.null;
       } catch (error) {
-        caught = error;
+        caught = error as Error;
       }
       expect(caught, 'baseline red is fixed -- see #15').to.exist;
-      expect(caught.message).to.equal('expected undefined to be null');
+      expect(caught!.message).to.equal('expected undefined to be null');
 
       role.nesting.something.value = nested;
 
@@ -107,7 +130,7 @@ describe('EnumValues', function () {
 
       const id = randElement(roles);
 
-      const role = await Role.findById(id).lean();
+      const role = (await Role.findById(id).lean<LeanRole>())!;
 
       expect(role.role).to.be.an('object');
       expect(role.role.values).to.be.an.instanceof(Array);
@@ -121,8 +144,8 @@ describe('EnumValues', function () {
   });
 });
 
-function randElement(values, current) {
-  let newElement;
+function randElement<T>(values: T[], current?: T): T {
+  let newElement: T;
 
   do {
     const randIdx = Math.floor(Math.random() * values.length);

@@ -1,4 +1,7 @@
-const Pet = require('mongoose').model('Pet');
+import mongoose from 'mongoose';
+import { beforeAll, describe, expect, it } from 'vitest';
+
+const Pet = mongoose.model('Pet');
 
 describe('EnumValues', function () {
   describe('virtual', function () {
@@ -26,7 +29,7 @@ describe('EnumValues', function () {
 
       expect(pet.speciesOptions).to.be.instanceof(Array).to.have.length(5);
 
-      pet.speciesOptions.forEach(function (species) {
+      pet.speciesOptions.forEach(function (species: string) {
         expect(['LION', 'TIGER', 'BEAR', 'PYTHON', 'PENGUIN']).to.include(
           species,
         );

@@ -31,6 +31,18 @@ This is the reference #14 and #15 are measured against:
 > `baseline red is fixed -- see #15`. That is the signal #15 should expect when
 > it fixes the behaviour. The pin is removed as part of that fix.
 
+> **Amended in #14 (Phase 2).** The source moved to `src/index.ts`, ported to
+> TypeScript with its behaviour unchanged, and the specs and fixtures moved to
+> TypeScript with it. The result holds: **13 passed**, exit `0`. The pin now
+> sits in `test/modify_spec.ts:92`, at lines 107-114, and still trips with
+> `baseline red is fixed -- see #15` — verified by making `determineValue`
+> return `null` there, as the fix would.
+>
+> Coverage reads **93.96% statements** on `src/index.ts`. The uncovered code
+> is unchanged: the three `catch` blocks that call `next(error)`, the function
+> and `RegExp` filter branches, and `filterPaths`' rethrow. Only the count
+> moved, because statements are now mapped through TypeScript source maps.
+
 ## Per-test
 
 | #   | File         | Test                                                 | Result   | Cause if red                                                              |
@@ -117,24 +129,32 @@ are byte-identical to the 2017 source.
 > — and the suite result above is unchanged across it. The _behaviour_ baseline
 > this document records still stands; only the byte-level claim does not.
 
+> **And as of #14 (Phase 2),** the specs and fixtures are TypeScript. The
+> changes are module syntax — `import` in place of `require()`, Vitest's
+> functions imported rather than global, and the fixtures loading the plugin
+> from `src/index.ts` rather than by a working-directory path — plus type
+> annotations, which compile away. Still no assertion was changed, added, or
+> removed.
+
 ## Observations carried into #15
 
-> **Line numbers below predate #13's Prettier reformat and no longer resolve.**
-> The code is unchanged — only its formatting — but every anchor moved. Current
-> locations:
+> **Line numbers below cite `index.js` as Phase 0 measured it, and no longer
+> resolve.** #13's Prettier reformat moved every anchor, and #14 moved the file
+> to `src/index.ts`. The code is unchanged — only its formatting, and in #14
+> its types. Current locations, in `src/index.ts`:
 >
 > | Observation                             | Cited as  | Now at                                                      |
 > | --------------------------------------- | --------- | ----------------------------------------------------------- |
-> | `pre('update')` registration            | `155`     | `167-168`, inside the `['update', 'findOneAndUpdate']` loop |
-> | `this._mongooseOptions.lean`            | `78`      | `79`                                                        |
-> | inner `paths.forEach` shadowing `path`  | `249`     | `264`                                                       |
-> | `filterPaths` rethrowing everything     | `187-215` | from `197`                                                  |
-> | `determineValue` swallowing all errors  | `267-280` | from `282`                                                  |
-> | `nest()` mutating via `array.reverse()` | `289`     | `306`                                                       |
-> | `next()`-style pre hooks                | `102-141` | from `105`                                                  |
+> | `pre('update')` registration            | `155`     | `252-253`, inside the `['update', 'findOneAndUpdate']` loop |
+> | `this._mongooseOptions.lean`            | `78`      | `154`                                                       |
+> | inner `paths.forEach` shadowing `path`  | `249`     | `357`                                                       |
+> | `filterPaths` rethrowing everything     | `187-215` | from `285`                                                  |
+> | `determineValue` swallowing all errors  | `267-280` | from `375`                                                  |
+> | `nest()` mutating via `array.reverse()` | `289`     | `402`                                                       |
+> | `next()`-style pre hooks                | `102-141` | from `182`                                                  |
 >
-> Coverage's uncovered-line list moved with them: `89,116,137,199,205-208`
-> became `91,122,145,212,218-221`.
+> Coverage's uncovered-line list moved with them: `89,116,137,199,205-208` in
+> Phase 0 is `168,202,225,303-304,309,312-314` now.
 
 Found while measuring. None are test failures; all are latent.
 
@@ -160,3 +180,24 @@ Found while measuring. None are test failures; all are latent.
 - **`index.js:102-141`** use `next()`-style pre hooks. Valid on Mongoose 8;
   Mongoose 9 removed `next()` support in `pre()`. This suite does not yet run
   against 9 — that leg arrives in #13.
+
+> **Added in #14 (Phase 2).** Two more, found in review of the port. Both
+> reproduce identically against the 2017 `index.js` and the built
+> `dist/index.cjs` on Mongoose 8.24.4, so they predate the port, and this
+> suite covers neither. Cited by their `src/index.ts` lines.
+>
+> - **`src/index.ts:355-358`** — `attach`'s post hook does not check for
+>   `null`. A `findOne` that matches nothing passes it `null`, `asArray()`
+>   wraps that as `[null]`, and the assignment throws. The query rejects with
+>   `TypeError: Cannot set properties of null` instead of resolving `null`.
+>   `attach` registers on `findOne` by default, so no opt-in is needed to hit
+>   this.
+> - **`src/index.ts:168`, `202` and `225`** — `return next(error)` inside a
+>   `forEach` callback returns from the callback only. The loop carries on, and
+>   the hook then calls `next()` a second time. On Mongoose 8.24.4 the first
+>   call wins and the second is dropped without a trace, but nothing promises
+>   that. One case reaches this today: a `.lean()` `findOne` that matches
+>   nothing, with `modify` on, rejects with
+>   `TypeError: Cannot read properties of null`. That is the same missing
+>   `null` check as above. These are the three `catch` lines in the uncovered
+>   list.

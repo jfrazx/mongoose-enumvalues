@@ -1,4 +1,7 @@
-const User = require('mongoose').model('User');
+import mongoose from 'mongoose';
+import { beforeAll, describe, expect, it } from 'vitest';
+
+const User = mongoose.model('User');
 
 describe('EnumValues', function () {
   describe('attach', function () {
@@ -38,7 +41,7 @@ describe('EnumValues', function () {
     it('genders should include ["MALE", "FEMALE"]', async function () {
       const lisa = await User.findOne({ name: 'Lisa Simpson' });
 
-      lisa.genders.forEach(function (gender) {
+      lisa.genders.forEach(function (gender: string) {
         expect(['MALE', 'FEMALE']).to.include(gender);
       });
     });

@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "module": "node16",
+    "target": "es2022",
+    "strict": true,
+    "isolatedModules": true,
+    // Several dev tools ship declarations that fail their own lib check.
+    // The check that matters -- the published declarations, and mongoose's,
+    // under skipLibCheck: false -- runs in test/consumers instead.
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src", "test", "tsdown.config.mts"],
+  "exclude": ["test/consumers"]
+}

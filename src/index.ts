@@ -1,4 +1,9 @@
-'use strict';
+import type {
+  CallbackWithoutResultAndOptionalError,
+  MongooseQueryMiddleware,
+  Schema,
+  SchemaType,
+} from 'mongoose';
 
 /**
  * eventually
@@ -45,25 +50,91 @@
   }
 */
 
+type Next = CallbackWithoutResultAndOptionalError;
+type Fields = Record<string, unknown>;
+
+interface Filtered {
+  only: enumValues.Filterables[];
+}
+
 /**
- *
- *
+ * The options once setOptions has filled in every default.
  */
-module.exports = function (schema, options) {
-  options = setOptions(schema, options);
+interface ResolvedOptions extends Filtered {
+  find?: boolean;
+  findOne?: boolean;
+  validateBeforeSave?: boolean;
+  virtual?: Filtered & { properties: Record<string, string> };
+  attach?: Filtered & {
+    properties: Record<string, { as: string; on: MongooseQueryMiddleware[] }>;
+  };
+  modify?: Filtered & { on: MongooseQueryMiddleware[] };
+}
 
-  const paths = findPaths(schema, options);
+interface EnumPath {
+  path: string;
+  enumValues: unknown[];
+  options: ResolvedOptions;
+}
 
-  setVirtuals(schema, filterPaths(paths, options.virtual));
-  attachProperties(schema, filterPaths(paths, options.attach));
-  modifyProperties(schema, filterPaths(paths, options.modify));
-};
+/**
+ * Mongoose plugin giving access to a schema's enum values: as virtuals,
+ * attached to queried documents, or in place of the enum property on lean
+ * results.
+ */
+function enumValues(
+  schema: Schema,
+  options?: enumValues.EnumValueOptions,
+): void {
+  const resolved = setOptions(schema, options);
+
+  const paths = findPaths(schema, resolved);
+
+  setVirtuals(schema, filterPaths(paths, resolved.virtual));
+  attachProperties(schema, filterPaths(paths, resolved.attach));
+  modifyProperties(schema, filterPaths(paths, resolved.modify));
+}
+
+// eslint-disable-next-line @typescript-eslint/no-namespace -- D21: carries the types on the one default export
+declare namespace enumValues {
+  type Filterables = string | RegExp | ((param: string) => boolean);
+
+  interface EnumValueOptions {
+    only?: Filterables[];
+    find?: boolean;
+    findOne?: boolean;
+    validateBeforeSave?: boolean;
+    virtual?: {
+      only?: Filterables[];
+      properties: {
+        [property: string]: string;
+      };
+    };
+    attach?: {
+      only?: Filterables[];
+      properties: {
+        [property: string]: {
+          as: string;
+          on?: string[];
+        };
+      };
+    };
+    modify?:
+      | {
+          only?: Filterables[];
+          on?: string[];
+        }
+      | boolean;
+  }
+}
+
+export default enumValues;
 
 /**
  * Setup handlers for modifying document properties, must be a `lean` object
  *
  */
-function modifyProperties(schema, paths) {
+function modifyProperties(schema: Schema, paths: EnumPath[]): void {
   if (!paths.length) {
     return;
   }
@@ -75,20 +146,26 @@ function modifyProperties(schema, paths) {
    * values (enumValues)
    *
    */
-  function populatePropertyFor(documents, next) {
+  function populatePropertyFor(
+    this: { _mongooseOptions: { lean?: unknown } },
+    documents: Fields | Fields[],
+    next: Next,
+  ): void {
     if (this._mongooseOptions.lean) {
       asArray(documents).forEach(function (doc) {
         paths.forEach(function (path) {
           try {
             const splitted = path.path.split('.');
-            const key = splitted.shift();
-            const insert = { values: path.enumValues };
+            const key = splitted.shift()!; // split() never returns an empty array
+            const insert: { values: unknown[]; value?: unknown } = {
+              values: path.enumValues,
+            };
             const value = doc[key];
 
             insert.value = determineValue(splitted, value);
             doc[key] = nest(splitted, insert);
           } catch (error) {
-            return next(error);
+            return next(error as Error);
           }
         });
       });
@@ -102,14 +179,17 @@ function modifyProperties(schema, paths) {
    * appropriate property, allowing for proper validations later.
    * @param <Function>: next - function that notifies mongoose this middleware is complete
    */
-  function reformatUpdateProperty(next) {
+  function reformatUpdateProperty(
+    this: { _update: { $set?: Fields } },
+    next: Next,
+  ): void {
     const document = this._update['$set'];
 
     if (document) {
       paths.forEach(function (path) {
         try {
           const splitted = path.path.split('.');
-          const key = splitted.shift();
+          const key = splitted.shift()!; // split() never returns an empty array
 
           if (document[key] === undefined) {
             return;
@@ -119,7 +199,7 @@ function modifyProperties(schema, paths) {
 
           document[key] = nest(splitted, value);
         } catch (error) {
-          return next(error);
+          return next(error as Error);
         }
       });
     }
@@ -132,17 +212,17 @@ function modifyProperties(schema, paths) {
    * appropriate property, allowing for proper validations later.
    * @param <Function>: next - function that notifies mongoose this middleware is complete
    */
-  function reformatProperty(next) {
+  function reformatProperty(this: Fields, next: Next): void {
     const self = this;
     paths.forEach(function (path) {
       try {
         const splitted = path.path.split('.');
-        const key = splitted.shift();
+        const key = splitted.shift()!; // split() never returns an empty array
         const value = determineValue(splitted, self[key]);
 
         self[key] = nest(splitted, value);
       } catch (error) {
-        return next(error);
+        return next(error as Error);
       }
     });
 
@@ -152,7 +232,9 @@ function modifyProperties(schema, paths) {
   /**
    * Setup handlers for modifying properties -- ['find', 'findOne']
    */
-  options.modify.on.forEach(function (on) {
+  // Non-null: filterPaths returns no paths when `modify` is unset, and this
+  // function returned above in that case.
+  options.modify!.on.forEach(function (on) {
     schema.post(on, populatePropertyFor);
   });
 
@@ -164,8 +246,11 @@ function modifyProperties(schema, paths) {
   /*
    * Setup handlers for updating documents (there may be more to consider)
    */
+  // 'update' is not a hook name Mongoose's types know: Mongoose 7 removed
+  // the method. The hook still registers, and never fires -- see
+  // docs/baseline.md.
   ['update', 'findOneAndUpdate'].forEach(function (on) {
-    schema.pre(on, reformatUpdateProperty);
+    schema.pre(on as MongooseQueryMiddleware, reformatUpdateProperty);
   });
 }
 
@@ -173,10 +258,13 @@ function modifyProperties(schema, paths) {
  * Locate schema paths that are enums
  * @param
  */
-function findPaths(schema, options) {
-  const paths = [];
+function findPaths(schema: Schema, options: ResolvedOptions): EnumPath[] {
+  const paths: EnumPath[] = [];
 
-  schema.eachPath(function (path, type) {
+  schema.eachPath(function (
+    path: string,
+    type: SchemaType & { enumValues?: unknown[] },
+  ) {
     if (type.enumValues && type.enumValues.length) {
       paths.push({
         path: path,
@@ -194,7 +282,10 @@ function findPaths(schema, options) {
  *
  *
  */
-function filterPaths(paths, allowed) {
+function filterPaths(
+  paths: EnumPath[],
+  allowed: Filtered | undefined,
+): EnumPath[] {
   if (!allowed) {
     return [];
   }
@@ -234,9 +325,10 @@ function filterPaths(paths, allowed) {
  * Setup virtual properties for the document
  *
  */
-function setVirtuals(schema, paths) {
+function setVirtuals(schema: Schema, paths: EnumPath[]): void {
   paths.forEach((path) => {
-    const props = path.options.virtual.properties;
+    // Non-null: filterPaths returns no paths when `virtual` is unset.
+    const props = path.options.virtual!.properties;
 
     if (props[path.path]) {
       schema.virtual(props[path.path]).get(function () {
@@ -250,16 +342,17 @@ function setVirtuals(schema, paths) {
  * Attach properties to the document
  *
  */
-function attachProperties(schema, paths) {
+function attachProperties(schema: Schema, paths: EnumPath[]): void {
   paths.forEach((path) => {
-    const props = path.options.attach.properties;
+    // Non-null: filterPaths returns no paths when `attach` is unset.
+    const props = path.options.attach!.properties;
 
     if (props[path.path]) {
       (props[path.path].on || []).forEach((on) => {
         /**
          * Setup post callbacks
          */
-        schema.post(on, function (documents, next) {
+        schema.post(on, function (documents: Fields | Fields[], next: Next) {
           asArray(documents).forEach(function (doc) {
             paths.forEach(function (path) {
               doc[props[path.path].as] = path.enumValues;
@@ -279,10 +372,13 @@ function attachProperties(schema, paths) {
  * @param Object: doc -- the document that contains the value at keys path
  * @return any: -- the value at the end of keys path in document
  */
-function determineValue(keys, doc) {
+function determineValue(keys: string[], doc: unknown): unknown {
+  // The casts are deliberate. This relies on the property reads throwing
+  // when it reaches null or undefined, and on the catch then returning
+  // whatever it got to -- the behaviour docs/baseline.md records.
   try {
     for (const key of keys) {
-      doc = doc[key];
+      doc = (doc as Fields)[key];
     }
 
     /**
@@ -290,7 +386,7 @@ function determineValue(keys, doc) {
       so any object is assumed to be enumValues:
         { value: 'string', enumValues: ['strings'] }
      */
-    return typeof doc === 'object' ? doc.value : doc;
+    return typeof doc === 'object' ? (doc as { value: unknown }).value : doc;
   } catch (error) {
     return doc;
   }
@@ -300,8 +396,8 @@ function determineValue(keys, doc) {
  * Nest the insert value into objects with keys from array
  *
  */
-function nest(array, insert) {
-  let obj;
+function nest(array: string[], insert: unknown): unknown {
+  let obj: Fields;
 
   array.reverse().forEach((key) => {
     obj = { [key]: insert };
@@ -315,8 +411,18 @@ function nest(array, insert) {
  * Setup options and defaults
  *
  */
-function setOptions(schema, options) {
-  function setDefaults(array) {
+function setOptions(
+  schema: Schema,
+  input: enumValues.EnumValueOptions | undefined,
+): ResolvedOptions {
+  // The defaults are written onto the caller's own object, in place, as
+  // 0.0.3 always did. It changes shape as they go in, which no one type
+  // describes, so this function alone works on an untyped view of it. Hook
+  // names in `on` are taken on trust, as Mongoose itself takes them.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see above
+  const options: Record<string, any> = input || {};
+
+  function setDefaults(array: string[]): void {
     if (!array.length) {
       if (options.find) {
         array.push('find');
@@ -326,8 +432,6 @@ function setOptions(schema, options) {
       }
     }
   }
-
-  options = options || {};
 
   options.only = options.only || [];
   options.validateBeforeSave =
@@ -359,12 +463,12 @@ function setOptions(schema, options) {
     });
   }
 
-  return options;
+  return options as ResolvedOptions;
 }
 
 /**
  * Helper function to ensure value is an array
  */
-function asArray(array) {
+function asArray<T>(array: T | T[]): T[] {
   return Array.isArray(array) ? array : [array];
 }

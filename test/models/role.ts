@@ -1,6 +1,5 @@
-const path = require('path');
-const enumValues = require(path.resolve('index'));
-const mongoose = require('mongoose');
+import enumValues from '../../src/index';
+import mongoose from 'mongoose';
 const { Schema } = mongoose;
 const RoleSchema = new Schema({
   role: {
@@ -31,7 +30,7 @@ const RoleSchema = new Schema({
   }
  */
 
-const enumOptions = {
+const enumOptions: enumValues.EnumValueOptions = {
   find: true,
   findOne: true,
   modify: true,
@@ -46,4 +45,4 @@ const enumOptions = {
 
 RoleSchema.plugin(enumValues, enumOptions);
 
-module.exports = mongoose.model('Role', RoleSchema);
+export default mongoose.model('Role', RoleSchema);
