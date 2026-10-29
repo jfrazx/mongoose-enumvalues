@@ -51,7 +51,9 @@ describe('EnumValues', function () {
       const updatedRole = await Role.findByIdAndUpdate(
         role._id,
         { $set: role },
-        { new: true },
+        // PORTED: Mongoose 9 deprecates the `new` option. `returnDocument` is
+        // its replacement, and is valid on Mongoose 8 too.
+        { returnDocument: 'after' },
       );
 
       expect(updatedRole.role).to.equal(role.role.value);
@@ -82,7 +84,9 @@ describe('EnumValues', function () {
       const updatedRole = await Role.findByIdAndUpdate(
         role._id,
         { $set: { role: newRole } },
-        { new: true },
+        // PORTED: Mongoose 9 deprecates the `new` option. `returnDocument` is
+        // its replacement, and is valid on Mongoose 8 too.
+        { returnDocument: 'after' },
       );
 
       expect(updatedRole.role).to.not.equal(oldRole);
@@ -94,31 +98,16 @@ describe('EnumValues', function () {
 
       const nested = randElement(role.nesting.something.values);
 
-      // The baseline red, pinned rather than skipped -- see docs/baseline.md.
-      // Mongoose 8 omits unset nested paths from lean() results, so
-      // determineValue receives undefined where Mongoose 4 gave it null.
-      //
-      // Asserting the exact failure, instead of marking the whole test
-      // it.fails(), keeps two properties D11 wanted: the rest of this test
-      // still runs and asserts, and an unrelated regression anywhere in it
-      // still fails the suite. When #15 fixes the behaviour this assertion
-      // goes red, which is the signal to delete this block and restore the
-      // original `expect(role.nesting.something.value).to.be.null;`.
-      let caught: Error | undefined;
-      try {
-        expect(role.nesting.something.value).to.be.null;
-      } catch (error) {
-        caught = error as Error;
-      }
-      expect(caught, 'baseline red is fixed -- see #15').to.exist;
-      expect(caught!.message).to.equal('expected undefined to be null');
+      expect(role.nesting.something.value).to.be.null;
 
       role.nesting.something.value = nested;
 
       const updatedRole = await Role.findOneAndUpdate(
         { _id: role._id },
         { $set: role },
-        { new: true },
+        // PORTED: Mongoose 9 deprecates the `new` option. `returnDocument` is
+        // its replacement, and is valid on Mongoose 8 too.
+        { returnDocument: 'after' },
       );
 
       expect(updatedRole.nesting.something).to.not.be.null;

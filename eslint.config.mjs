@@ -57,25 +57,4 @@ export default defineConfig(
       '@typescript-eslint/no-unused-expressions': 'off',
     },
   },
-
-  // src/index.ts is the 2017 source, ported to TypeScript in #14 with its
-  // behaviour unchanged. #15 rewrites it, and these four findings are that
-  // phase's work -- three are already recorded as latent bugs in
-  // docs/baseline.md:
-  //
-  //   no-unused-vars (311)     -> filterPaths swallowing the caught error
-  //   preserve-caught-error    -> filterPaths rethrowing without a cause
-  //   no-unused-vars (390)     -> determineValue catching everything
-  //   no-this-alias (216)      -> not previously recorded; raised on #15
-  //
-  // Silencing them here keeps the gate strict for every other file rather
-  // than weakening it repo-wide. Delete this block in #15.
-  {
-    files: ['src/index.ts'],
-    rules: {
-      '@typescript-eslint/no-this-alias': 'off',
-      '@typescript-eslint/no-unused-vars': 'off',
-      'preserve-caught-error': 'off',
-    },
-  },
 );

@@ -10,9 +10,17 @@ export default defineConfig({
     hookTimeout: 120000,
     coverage: {
       include: ['src/index.ts'],
-      // The suite carries a deliberate red until the middleware rewrite, and
-      // Vitest skips the coverage report on failure by default -- which would
-      // make coverage silently useless for the whole of phases 0-3.
+      // Measured on the finished rewrite (D31 on #15), rounded down to a whole
+      // percent: statements 100, branches 93.5, functions 100, lines 100.
+      thresholds: {
+        statements: 100,
+        branches: 93,
+        functions: 100,
+        lines: 100,
+      },
+      // Vitest skips the coverage report when a test fails, unless told
+      // otherwise. Keep it, so a red run still shows which lines it left
+      // uncovered.
       reportOnFailure: true,
     },
   },

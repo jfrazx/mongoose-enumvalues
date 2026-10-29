@@ -1,9 +1,4 @@
-import type {
-  CallbackWithoutResultAndOptionalError,
-  MongooseQueryMiddleware,
-  Schema,
-  SchemaType,
-} from 'mongoose';
+import type { MongooseQueryMiddleware, Schema, SchemaType } from 'mongoose';
 
 /**
  * eventually
@@ -50,7 +45,6 @@ import type {
   }
 */
 
-type Next = CallbackWithoutResultAndOptionalError;
 type Fields = Record<string, unknown>;
 
 interface Filtered {
@@ -75,6 +69,24 @@ interface EnumPath {
   path: string;
   enumValues: unknown[];
   options: ResolvedOptions;
+}
+
+/**
+ * What `modify` turns an enum path into on a lean read, and what a client
+ * then sends back on a write.
+ */
+interface EnumShape {
+  value?: unknown;
+  values: unknown[];
+}
+
+/**
+ * What `this` may be in a post hook. Hook names in `on` are taken on trust,
+ * so it is a query only if it has a query's methods.
+ */
+interface HookContext {
+  mongooseOptions?(): { lean?: unknown };
+  getOptions?(): { includeResultMetadata?: unknown };
 }
 
 /**
@@ -103,6 +115,11 @@ declare namespace enumValues {
     only?: Filterables[];
     find?: boolean;
     findOne?: boolean;
+    /**
+     * @deprecated Accepted and ignored. It chose which hook `modify`
+     * registered its write-side pre hook on, and `modify` no longer uses
+     * pre hooks (D33).
+     */
     validateBeforeSave?: boolean;
     virtual?: {
       only?: Filterables[];
@@ -131,7 +148,8 @@ declare namespace enumValues {
 export default enumValues;
 
 /**
- * Setup handlers for modifying document properties, must be a `lean` object
+ * Setup `modify`: a setter that unwraps a shape on write, and a post hook that
+ * turns an enum path into a shape on a `lean` read
  *
  */
 function modifyProperties(schema: Schema, paths: EnumPath[]): void {
@@ -142,91 +160,33 @@ function modifyProperties(schema: Schema, paths: EnumPath[]): void {
   const options = paths[0].options;
 
   /**
-   * Modify document enum (string) properties to an object, with (original) value and
-   * values (enumValues)
+   * Replace each enum path on a `lean` result with an object holding the
+   * path's (original) value and its values (enumValues). Only that one
+   * path is touched: the siblings around it are left as they are.
    *
+   * The flag is read from `mongooseOptions()`. On Mongoose 8, `getOptions()`
+   * has no `lean` for a `find` by the time this hook runs. Only a query can
+   * be lean: a document or aggregate hook listed in `on` is left alone.
    */
-  function populatePropertyFor(
-    this: { _mongooseOptions: { lean?: unknown } },
-    documents: Fields | Fields[],
-    next: Next,
-  ): void {
-    if (this._mongooseOptions.lean) {
-      asArray(documents).forEach(function (doc) {
-        paths.forEach(function (path) {
-          try {
-            const splitted = path.path.split('.');
-            const key = splitted.shift()!; // split() never returns an empty array
-            const insert: { values: unknown[]; value?: unknown } = {
-              values: path.enumValues,
-            };
-            const value = doc[key];
+  function populatePropertyFor(this: HookContext, result: unknown): void {
+    if (typeof this.mongooseOptions !== 'function') {
+      return;
+    }
+    if (!this.mongooseOptions().lean) {
+      return;
+    }
 
-            insert.value = determineValue(splitted, value);
-            doc[key] = nest(splitted, insert);
-          } catch (error) {
-            return next(error as Error);
-          }
+    resultDocuments(this, result).forEach(function (doc) {
+      paths.forEach(function (path) {
+        const keys = path.path.split('.');
+
+        // Read before write: the write replaces the leaf being read.
+        writeEnumShape(doc, keys, {
+          values: path.enumValues.slice(),
+          value: readEnumValue(doc, keys),
         });
       });
-    }
-
-    next();
-  }
-
-  /**
-   * If a document is modified, this method will locate the value on updates and assign it to the
-   * appropriate property, allowing for proper validations later.
-   * @param <Function>: next - function that notifies mongoose this middleware is complete
-   */
-  function reformatUpdateProperty(
-    this: { _update: { $set?: Fields } },
-    next: Next,
-  ): void {
-    const document = this._update['$set'];
-
-    if (document) {
-      paths.forEach(function (path) {
-        try {
-          const splitted = path.path.split('.');
-          const key = splitted.shift()!; // split() never returns an empty array
-
-          if (document[key] === undefined) {
-            return;
-          }
-
-          const value = determineValue(splitted, document[key]);
-
-          document[key] = nest(splitted, value);
-        } catch (error) {
-          return next(error as Error);
-        }
-      });
-    }
-
-    next();
-  }
-
-  /**
-   * If a document is modified, this method will locate the value before save/validation and assign it to the
-   * appropriate property, allowing for proper validations later.
-   * @param <Function>: next - function that notifies mongoose this middleware is complete
-   */
-  function reformatProperty(this: Fields, next: Next): void {
-    const self = this;
-    paths.forEach(function (path) {
-      try {
-        const splitted = path.path.split('.');
-        const key = splitted.shift()!; // split() never returns an empty array
-        const value = determineValue(splitted, self[key]);
-
-        self[key] = nest(splitted, value);
-      } catch (error) {
-        return next(error as Error);
-      }
     });
-
-    next();
   }
 
   /**
@@ -238,20 +198,38 @@ function modifyProperties(schema: Schema, paths: EnumPath[]): void {
     schema.post(on, populatePropertyFor);
   });
 
-  schema.pre(
-    options.validateBeforeSave ? 'validate' : 'save',
-    reformatProperty,
-  );
-
   /*
-   * Setup handlers for updating documents (there may be more to consider)
+   * Writes are unwrapped by a setter, which runs before Mongoose casts the
+   * value. Setters run last-added first, so this one runs before the schema's
+   * own `lowercase`, `trim` and `uppercase`, which would throw on a shape.
+   * That holds only for setters added before the plugin is applied: one added
+   * to the path afterwards runs first, and sees the shape.
    */
-  // 'update' is not a hook name Mongoose's types know: Mongoose 7 removed
-  // the method. The hook still registers, and never fires -- see
-  // docs/baseline.md.
-  ['update', 'findOneAndUpdate'].forEach(function (on) {
-    schema.pre(on as MongooseQueryMiddleware, reformatUpdateProperty);
+  paths.forEach(function (path) {
+    schema.path(path.path).set(unwrapEnumShape);
   });
+}
+
+/**
+ * A non-null object that is not an array.
+ */
+function isObject(value: unknown): value is Fields {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A shape is a non-null, non-array object whose `values` is an array.
+ */
+function isEnumShape(value: unknown): value is EnumShape {
+  return isObject(value) && Array.isArray(value.values);
+}
+
+/**
+ * Unwrap a shape to its `value`. Anything else, which is every plain value
+ * a query filter or an ordinary write carries, passes through unchanged.
+ */
+function unwrapEnumShape(value: unknown): unknown {
+  return isEnumShape(value) ? value.value : value;
 }
 
 /**
@@ -293,32 +271,37 @@ function filterPaths(
     return paths;
   }
 
-  return paths.filter((path) => {
-    let match = false;
+  return paths.filter((path) =>
+    allowed.only.some((filter) => matchesFilter(filter, path.path)),
+  );
+}
 
-    for (const filter of allowed.only) {
-      try {
-        switch (typeof filter) {
-          case 'function':
-            match = filter(path.path);
-            break;
-          case 'string':
-            match = path.path === filter;
-            break;
-          default:
-            match = filter.test(path.path);
-        }
-      } catch (e) {
-        throw new Error(
-          `${typeof filter} is not an allowed filter type. Must be String, RegExp or Function`,
-        );
-      }
-      if (match) {
-        return match;
-      }
-    }
-    return match;
-  });
+/**
+ * Whether one filter selects a path. A predicate's own error propagates,
+ * rather than being reported as a bad filter.
+ */
+function matchesFilter(filter: enumValues.Filterables, path: string): boolean {
+  if (typeof filter === 'function') {
+    return Boolean(filter(path));
+  }
+  if (typeof filter === 'string') {
+    return path === filter;
+  }
+  // Duck-typed on purpose. 0.0.3 accepted anything with a `test`, and
+  // `instanceof RegExp` fails for a RegExp from another realm. `null` is an
+  // object too, so it is ruled out before `test` is read, and falls through
+  // to the rejection below.
+  if (
+    filter !== null &&
+    typeof filter === 'object' &&
+    typeof filter.test === 'function'
+  ) {
+    return filter.test(path);
+  }
+
+  throw new Error(
+    `${typeof filter} is not an allowed filter type. Must be String, RegExp or Function`,
+  );
 }
 
 /**
@@ -332,7 +315,8 @@ function setVirtuals(schema: Schema, paths: EnumPath[]): void {
 
     if (props[path.path]) {
       schema.virtual(props[path.path]).get(function () {
-        return path.enumValues;
+        // A copy: Mongoose's enum validator reads this same array.
+        return path.enumValues.slice();
       });
     }
   });
@@ -350,16 +334,15 @@ function attachProperties(schema: Schema, paths: EnumPath[]): void {
     if (props[path.path]) {
       (props[path.path].on || []).forEach((on) => {
         /**
-         * Setup post callbacks
+         * Setup post callbacks. Each one attaches its own path alone: the
+         * hooks of a property are the ones it listed in `on`, so a hook that
+         * attached every path would put the others on queries they never
+         * named, and would fail on a path with no property.
          */
-        schema.post(on, function (documents: Fields | Fields[], next: Next) {
-          asArray(documents).forEach(function (doc) {
-            paths.forEach(function (path) {
-              doc[props[path.path].as] = path.enumValues;
-            });
+        schema.post(on, function (this: HookContext, result: unknown): void {
+          resultDocuments(this, result).forEach(function (doc) {
+            doc[props[path.path].as] = path.enumValues.slice();
           });
-
-          next();
         });
       });
     }
@@ -367,44 +350,57 @@ function attachProperties(schema: Schema, paths: EnumPath[]): void {
 }
 
 /**
- * Traverse the passed document, according to keys, appropriating the desired value
- * @param [String]: keys -- an array of keys determining the path to value
- * @param Object: doc -- the document that contains the value at keys path
- * @return any: -- the value at the end of keys path in document
+ * Read the value at `keys` in a lean document, looking through a shape left
+ * there by an earlier pass (a hook listed twice in `modify.on`).
+ *
+ * On a nested path, a value that is absent or `null` reads as `null`. That
+ * is what 0.0.3 gave on Mongoose 4. Mongoose 8 leaves an unset nested path
+ * out of a lean result altogether, and a stored `null` parent has nothing
+ * under it to read. A top-level path reads as it is stored: absent stays
+ * `undefined`, and `null` stays `null`.
  */
-function determineValue(keys: string[], doc: unknown): unknown {
-  // The casts are deliberate. This relies on the property reads throwing
-  // when it reaches null or undefined, and on the catch then returning
-  // whatever it got to -- the behaviour docs/baseline.md records.
-  try {
-    for (const key of keys) {
-      doc = (doc as Fields)[key];
+function readEnumValue(doc: Fields, keys: string[]): unknown {
+  let value: unknown = doc;
+
+  for (const key of keys) {
+    if (!isObject(value)) {
+      value = undefined;
+      break;
     }
 
-    /**
-      the keys array should transition through any nesting,
-      so any object is assumed to be enumValues:
-        { value: 'string', enumValues: ['strings'] }
-     */
-    return typeof doc === 'object' ? (doc as { value: unknown }).value : doc;
-  } catch (error) {
-    return doc;
+    value = value[key];
   }
+
+  if (isEnumShape(value)) {
+    value = value.value;
+  }
+
+  return keys.length > 1 && (value === undefined || value === null)
+    ? null
+    : value;
 }
 
 /**
- * Nest the insert value into objects with keys from array
- *
+ * Put `insert` at `keys` in a lean document, and change nothing else. A
+ * parent that is missing or `null` is given a new object, so the leaf has
+ * somewhere to live. Any other parent that is not a plain object is stored
+ * data, and is left as it is: the shape is not written, since replacing the
+ * parent would lose that data if the document were written back.
  */
-function nest(array: string[], insert: unknown): unknown {
-  let obj: Fields;
+function writeEnumShape(doc: Fields, keys: string[], insert: EnumShape): void {
+  let parent = doc;
 
-  array.reverse().forEach((key) => {
-    obj = { [key]: insert };
-    insert = obj;
-  });
+  for (const key of keys.slice(0, -1)) {
+    if (parent[key] === undefined || parent[key] === null) {
+      parent[key] = {};
+    } else if (!isObject(parent[key])) {
+      return;
+    }
 
-  return insert;
+    parent = parent[key] as Fields;
+  }
+
+  parent[keys[keys.length - 1]] = insert;
 }
 
 /**
@@ -467,8 +463,19 @@ function setOptions(
 }
 
 /**
- * Helper function to ensure value is an array
+ * The documents in a post hook's result. A query run with
+ * `includeResultMetadata` resolves a wrapper, whose `value` is the document.
+ * Anything that is not an object is no document at all, and is dropped: the
+ * `null` of a `findOne` that matches nothing, or the number of a count.
  */
-function asArray<T>(array: T | T[]): T[] {
-  return Array.isArray(array) ? array : [array];
+function resultDocuments(context: HookContext, result: unknown): Fields[] {
+  if (
+    typeof context.getOptions === 'function' &&
+    context.getOptions().includeResultMetadata &&
+    isObject(result)
+  ) {
+    result = result.value;
+  }
+
+  return (Array.isArray(result) ? result : [result]).filter(isObject);
 }
