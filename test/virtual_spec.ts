@@ -35,5 +35,16 @@ describe('EnumValues', function () {
         );
       });
     });
+
+    it('mutating the virtual does not change the enum', async function () {
+      const pet = await Pet.findOne({ species: 'PYTHON' });
+
+      pet.speciesOptions.push('HACKED');
+
+      expect(pet.speciesOptions).to.have.length(5);
+      await expect(Pet.create({ species: 'HACKED' })).rejects.toThrow(
+        mongoose.Error.ValidationError,
+      );
+    });
   });
 });

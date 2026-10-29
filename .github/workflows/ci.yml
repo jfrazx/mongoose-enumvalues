@@ -35,10 +35,6 @@ jobs:
   test:
     name: test · node ${{ matrix.node }} · mongoose ${{ matrix.mongoose }}
     runs-on: ubuntu-latest
-    # The Mongoose 9 legs are expected red until #15 — src/index.ts registers
-    # next()-style pre hooks, which Mongoose 9 removed. A visible red beats a
-    # hidden gap, so these run and report rather than being deleted.
-    continue-on-error: ${{ matrix.mongoose == 9 }}
     strategy:
       fail-fast: false
       matrix:
@@ -60,6 +56,12 @@ jobs:
       - name: Install mongoose ${{ matrix.mongoose }}
         if: matrix.mongoose != 8
         run: npm install --no-save mongoose@${{ matrix.mongoose }}
+
+      # src/ is otherwise only typechecked against the lockfile's 8 (the lint
+      # job), and D30 on #15 requires both halves of the peer range.
+      - name: Typecheck against mongoose ${{ matrix.mongoose }}
+        if: matrix.mongoose != 8
+        run: npm run typecheck
 
       # Keyed on globalSetup.mts, which carries the pinned MongoDB version.
       # restore-keys lets an unrelated edit to that file reuse the existing
@@ -123,8 +125,7 @@ jobs:
   # exercised here on the same Node lines as the test matrix. D17 on #14.
   #
   # Against both halves of the peer range, since the published declarations
-  # import mongoose's types. Unlike the test matrix, the 9 legs gate: these
-  # checks register no hooks, so nothing in them waits on #15.
+  # import mongoose's types. Both halves gate, as they do in the test matrix.
   consumers:
     name: consumers · node ${{ matrix.node }} · mongoose ${{ matrix.mongoose }}
     runs-on: ubuntu-latest
@@ -182,22 +183,30 @@ jobs:
           restore-keys: |
             mongodb-binaries-${{ runner.os }}-
 
-      # Reported, never gated. src/index.ts is rewritten in #15, so a
-      # threshold pinned to today's file shape would fight that phase. The
-      # gate lands in #15. Locked as D12 on #13.
+      # Gated. The thresholds in vitest.config.mjs now gate this step (D31 on
+      # #15, deferred there by D12 on #13), so a drop in coverage fails the
+      # job.
       #
-      # pipefail so a crashed test run fails this step instead of quietly
-      # writing an empty table; NO_COLOR so the summary gets plain text
+      # tee keeps vitest's full output in the job log. pipefail gives the
+      # pipeline vitest's exit status rather than tee's, and `|| status=$?`
+      # holds it, so the summary is written before the step exits with it.
+      # The summary takes the coverage table and any threshold ERROR lines,
+      # which vitest prints after the table. NO_COLOR so both are plain text
       # rather than ANSI escapes, which vitest emits whenever CI is set.
-      - name: Report coverage
+      - name: Check coverage
         env:
           NO_COLOR: '1'
         run: |
           set -o pipefail
+          log="$RUNNER_TEMP/coverage.log"
+          status=0
+          npm run test:coverage --silent 2>&1 | tee "$log" || status=$?
           {
             echo '## Coverage'
             echo
             echo '```'
-            npm run test:coverage --silent 2>&1 | sed -n '/% Stmts/,/^[[:space:]]*$/p'
+            sed -n '/% Stmts/,/^[[:space:]]*$/p' "$log"
+            grep '^ERROR:' "$log" || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

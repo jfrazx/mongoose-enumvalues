@@ -201,3 +201,83 @@ Found while measuring. None are test failures; all are latent.
 >   `TypeError: Cannot read properties of null`. That is the same missing
 >   `null` check as above. These are the three `catch` lines in the uncovered
 >   list.
+
+## Resolved in #15 (Phase 3)
+
+The middleware rewrite closes every observation above, the two bugs added in
+#14, two more found while rewriting, and three found in review. The
+measurements earlier in this document are left as they were: they record what
+each phase saw. This section records what changed, and the test that fails if
+it regresses. Tests are named by spec file, then `describe`, then `it`.
+
+| Observation                                                   | Resolution                                                                                                                                                                                                                                                                                                                              | Pinned by                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pre('update')` registration (`index.js:155`)                 | Removed with every other pre hook (D33). It never fired on Mongoose 7 and later. Updates now unwrap through a setter, which runs as Mongoose casts the update.                                                                                                                                                                          | No test can fail on a hook that never ran. The write it was meant for: `modify_write_spec.ts` › `modify writes` › `findByIdAndUpdate unwraps top-level fields`                                                                                                                                 |
+| `this._mongooseOptions.lean` (`index.js:78`)                  | Read with `this.mongooseOptions().lean` (D9). On 8.24.4, in a post hook, `getOptions().lean` is `undefined` for `find` but truthy for `findOne`, so the note above holds for `find` only.                                                                                                                                               | `modify_read_spec.ts` › `modify reads` › `find().lean() handles complete and sparse documents together`, the one test that fails if the accessor regresses; `a non-lean read leaves a sparse document unmodified`, which fails if the flag is not checked at all                               |
+| inner `paths.forEach` shadowing `path` (`index.js:249`)       | Each hook attaches only the property of its own path. Also gone: a `findOne`-only property appearing on `find` results, and a throw from an `attach.only` path that has no property.                                                                                                                                                    | `attach_spec.ts` › `attach regressions` › `each attached property appears only on its own hooks`; `attach.only naming a path without a property does not throw`                                                                                                                                |
+| `determineValue` swallowing all errors (`index.js:267-280`)   | Deleted. Absent and `null` are handled explicitly (D28, below), and nothing is caught.                                                                                                                                                                                                                                                  | `modify_read_spec.ts` › `modify reads` › `an unset nested enum reads as null`; `a stored null parent reads each nested enum as null`                                                                                                                                                           |
+| `nest()` mutating via `array.reverse()` (`index.js:289`)      | Deleted with `determineValue`. Every call passed an array split fresh for that call, so the mutation was never observable.                                                                                                                                                                                                              | None: nothing observable to fail on. The code that replaced it is covered by the nested-siblings row below.                                                                                                                                                                                    |
+| `filterPaths` rethrowing everything (`index.js:187-215`)      | Dispatches on the kind of filter. Only a filter of the wrong kind is rejected, with 0.0.3's message (`null` included). A user predicate's own error propagates as it is.                                                                                                                                                                | `options_spec.ts` › `only` › `a throwing predicate surfaces its own error`; `a value that is not a filter is still rejected`; `null is rejected with the same message as in 0.0.3`; `undefined is rejected as a filter`                                                                        |
+| `next()`-style pre hooks (`index.js:102-141`)                 | None left: no pre hooks and no `next` in `src/`, and post hooks are synchronous. The Mongoose 9 legs of the `test` job no longer run under `continue-on-error`.                                                                                                                                                                         | No single test. The whole suite passes on Mongoose 9, and the 9 legs gate in CI.                                                                                                                                                                                                               |
+| `attach` post hook missing a `null` check (added in #14)      | `asArray(null)` is an empty array, so a `findOne` that matches nothing resolves `null`.                                                                                                                                                                                                                                                 | `attach_spec.ts` › `attach regressions` › `findOne matching nothing resolves null`                                                                                                                                                                                                             |
+| `return next(error)` inside `forEach` (added in #14)          | No `next` remains. The case it reached, a `.lean()` `findOne` that matches nothing with `modify` on, resolves `null` instead of rejecting.                                                                                                                                                                                              | `modify_read_spec.ts` › `modify reads` › `findOne matching nothing resolves null`                                                                                                                                                                                                              |
+| Nested siblings destroyed (found in #15)                      | Reads write each enum at its own leaf, in place, and touch nothing else (D34). The old code rebuilt the whole top-level object per path, so the second enum under a parent replaced the first and dropped the plain siblings. Writes use the setter, not a rebuilt `$set` that lost siblings such as `label` (D33).                     | `modify_read_spec.ts` › `modify reads` › `lean read transforms every nested enum and keeps siblings`; `a lean document round-trips through $set without losing siblings`. `modify_write_spec.ts` › `modify writes` › `$set of nested shapes keeps siblings`; `updateOne unwraps a dotted path` |
+| `create` with a shape stores `{}` (found in #15)              | The setter unwraps the shape on assignment, before the cast that discarded it. A shape assigned to a hydrated document and then saved was dropped the same way, and is now stored.                                                                                                                                                      | `modify_write_spec.ts` › `modify writes` › `create unwraps shapes, applies schema setters, and keeps siblings`; `save unwraps a shape assigned to a hydrated document`                                                                                                                         |
+| Shared `enumValues` array (found in review of #15)            | `modify`, `attach` and `virtual` each hand out a copy. They handed out the schema's own array, which Mongoose's enum validator also reads, so pushing onto a read result let that value pass validation everywhere. This predates the rewrite.                                                                                          | `modify_read_spec.ts` › `modify reads` › `mutating a lean result does not change the enum`; `attach_spec.ts` › `attach regressions` › `mutating an attached property does not change the enum`; `virtual_spec.ts` › `virtual` › `mutating the virtual does not change the enum`                |
+| A hook result that is not a document (found in review of #15) | Only objects are treated as documents, and an `includeResultMetadata` wrapper is looked through to its `value`. A count named in `on` threw on assignment to a number, and the wrapper got the shape or property in place of its document.                                                                                              | `modify_read_spec.ts` › `modify hook results` › `a lean count resolves the count`; `includeResultMetadata transforms the document, not the wrapper`. `attach_spec.ts` › `attach regressions` › `a count resolves the count`; `includeResultMetadata attaches to the document, not the wrapper` |
+| A non-query hook in `modify.on` (found in review of #15)      | `modify` skips a hook whose `this` has no `mongooseOptions()`, since only a query can be lean. A `save` or `aggregate` named in `on` threw a `TypeError`, as it did in 0.0.3.                                                                                                                                                           | `modify_read_spec.ts` › `modify hook results` › `a document hook in modify.on leaves save alone`; `an aggregate hook in modify.on leaves aggregate alone`                                                                                                                                      |
+| A non-object parent replaced (found in review of #15)         | A nested enum's parent is given `{}` only when it is missing or `null`. Any other non-object parent is left as stored. Replacing it, as D34 first specified, meant a legacy `settings: ['x']` read lean and written back with `$set` was stored as `{ theme: null, density: null }`; without the plugin, the same `$set` keeps `['x']`. | `modify_read_spec.ts` › `modify reads` › `a non-object parent is left alone`; `an array parent is left alone`; `an array parent round-trips through $set unchanged`                                                                                                                            |
+
+### Test 12 asserts `null` again
+
+_Should process nested enums_ (row 12 of the per-test table) asserts
+`expect(role.nesting.something.value).to.be.null` once more. Phase 0 found it
+red because Mongoose 8 leaves an unset nested path out of a lean result, where
+Mongoose 4 materialized it and 0.0.3 returned `null` (see _The one failure, in
+detail_). Decision D28 restores that result. On a `modify` lean read, a
+**dotted** path whose value is absent or `null` gives `value: null`. The rule
+stops there: a **top-level** path gives what is stored, so absent stays
+`undefined` and `null` stays `null`. #13 pinned the failure with an exact-message
+catch, and #15 removes that pin.
+
+All in `modify_read_spec.ts` › `modify reads`:
+
+- D28, nested: `an unset nested enum reads as null`, and
+  `a stored null nested leaf reads as null`.
+- D28, top-level: `an absent top-level enum reads as undefined`, and
+  `a stored null top-level enum stays null`.
+- D34, as amended in review: only a missing or `null` parent is given `{}`,
+  which the nested `null` above needs. Any other non-object parent, such as
+  a string or an array, is stored data and is left alone, with no shape
+  written under it: `a non-object parent is left alone`,
+  `an array parent is left alone`, and
+  `an array parent round-trips through $set unchanged`.
+
+### Pre hooks are gone
+
+The `pre('update')` hook and every other pre hook were removed (D33).
+`modify`'s write side is now a schema setter on each enum path. The suite
+tests it through `create`, `save` after a plain assignment, `insertMany`,
+`findOneAndUpdate`/`findByIdAndUpdate`, `updateOne`, `updateMany`,
+`replaceOne` and `findOneAndReplace`, with updates given as top-level fields,
+a dotted path and `$set`. `validateBeforeSave` only chose which hook
+`modify` registered on, so it is now a deprecated no-op: still accepted, and
+ignored. A schema with `validateBeforeSave: false` still unwraps on save
+(`modify_write_spec.ts` › `modify writes` ›
+`validateBeforeSave: false still unwraps on save`).
+
+### Full matrix result
+
+Verified locally, on Node v24.14.1 against MongoDB 8.2.6 (D27): **61 passed**,
+in 6 files, on Mongoose **8.24.4** (the lockfile) and on Mongoose **9.11.4**
+(`npm install --no-save mongoose@9`). `npm run typecheck` passes on both.
+
+Coverage on `src/index.ts` is 100% statements, 93.9% branches (77 of 82), 100%
+functions and 100% lines. The gate in `vitest.config.mjs` (D31) is set at 100,
+93, 100 and 100. It was first set from a measurement of 93.82% branches (76 of
+81). Folding three object checks into one helper has since removed four
+covered branches, leaving the same five uncovered, and 93.5 still rounded down
+to 93. The fixes from review added five branches, all covered.
+
+The Node [22, 24] × Mongoose [8, 9] matrix has not run on this branch yet. It
+runs in CI on the pull request, and that run is the result of record.
